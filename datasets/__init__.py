@@ -1,13 +1,13 @@
 import os
-import torch
+import paddle
 import numbers
-import torchvision.transforms as transforms
-import torchvision.transforms.functional as F
-from torchvision.datasets import CIFAR10
+import paddle.vision.transforms as transforms
+import paddle.vision.transforms.functional as F
+from paddle.vision.datasets import Cifar10
 from datasets.celeba import CelebA
 from datasets.ffhq import FFHQ
 from datasets.lsun import LSUN
-from torch.utils.data import Subset
+from paddle.io import Subset
 import numpy as np
 
 
@@ -30,30 +30,30 @@ class Crop(object):
 def get_dataset(args, config):
     if config.data.random_flip is False:
         tran_transform = test_transform = transforms.Compose(
-            [transforms.Resize(config.data.image_size), transforms.ToTensor()]
+            [transforms.Resize([config.data.image_size]*2), transforms.Transpose(), transforms.Normalize(0, 255.0)]
         )
     else:
         tran_transform = transforms.Compose(
             [
-                transforms.Resize(config.data.image_size),
+                transforms.Resize([config.data.image_size]*2),
                 transforms.RandomHorizontalFlip(p=0.5),
-                transforms.ToTensor(),
+                transforms.Transpose(), transforms.Normalize(0, 255.0),
             ]
         )
         test_transform = transforms.Compose(
-            [transforms.Resize(config.data.image_size), transforms.ToTensor()]
+            [transforms.Resize([config.data.image_size]*2), transforms.Transpose(), transforms.Normalize(0, 255.0)]
         )
 
     if config.data.dataset == "CIFAR10":
-        dataset = CIFAR10(
+        dataset = Cifar10(
             os.path.join(args.exp, "datasets", "cifar10"),
-            train=True,
+            mode="train", 
             download=True,
             transform=tran_transform,
         )
-        test_dataset = CIFAR10(
+        test_dataset = Cifar10(
             os.path.join(args.exp, "datasets", "cifar10_test"),
-            train=False,
+            mode="test", 
             download=True,
             transform=test_transform,
         )
@@ -72,9 +72,9 @@ def get_dataset(args, config):
                 transform=transforms.Compose(
                     [
                         Crop(x1, x2, y1, y2),
-                        transforms.Resize(config.data.image_size),
+                        transforms.Resize([config.data.image_size]*2),
                         transforms.RandomHorizontalFlip(),
-                        transforms.ToTensor(),
+                        transforms.Transpose(), transforms.Normalize(0, 255.0),
                     ]
                 ),
                 download=True,
@@ -86,8 +86,8 @@ def get_dataset(args, config):
                 transform=transforms.Compose(
                     [
                         Crop(x1, x2, y1, y2),
-                        transforms.Resize(config.data.image_size),
-                        transforms.ToTensor(),
+                        transforms.Resize([config.data.image_size]*2),
+                        transforms.Transpose(), transforms.Normalize(0, 255.0),
                     ]
                 ),
                 download=True,
@@ -99,8 +99,8 @@ def get_dataset(args, config):
             transform=transforms.Compose(
                 [
                     Crop(x1, x2, y1, y2),
-                    transforms.Resize(config.data.image_size),
-                    transforms.ToTensor(),
+                    transforms.Resize([config.data.image_size]*2),
+                    transforms.Transpose(), transforms.Normalize(0, 255.0),
                 ]
             ),
             download=True,
@@ -115,10 +115,10 @@ def get_dataset(args, config):
                 classes=[train_folder],
                 transform=transforms.Compose(
                     [
-                        transforms.Resize(config.data.image_size),
-                        transforms.CenterCrop(config.data.image_size),
+                        transforms.Resize([config.data.image_size]*2),
+                        transforms.CenterCrop((config.data.image_size,)*2),
                         transforms.RandomHorizontalFlip(p=0.5),
-                        transforms.ToTensor(),
+                        transforms.Transpose(), transforms.Normalize(0, 255.0),
                     ]
                 ),
             )
@@ -128,9 +128,9 @@ def get_dataset(args, config):
                 classes=[train_folder],
                 transform=transforms.Compose(
                     [
-                        transforms.Resize(config.data.image_size),
-                        transforms.CenterCrop(config.data.image_size),
-                        transforms.ToTensor(),
+                        transforms.Resize([config.data.image_size]*2),
+                        transforms.CenterCrop((config.data.image_size,)*2),
+                        transforms.Transpose(), transforms.Normalize(0, 255.0),
                     ]
                 ),
             )
@@ -140,9 +140,9 @@ def get_dataset(args, config):
             classes=[val_folder],
             transform=transforms.Compose(
                 [
-                    transforms.Resize(config.data.image_size),
-                    transforms.CenterCrop(config.data.image_size),
-                    transforms.ToTensor(),
+                    transforms.Resize([config.data.image_size]*2),
+                    transforms.CenterCrop((config.data.image_size,)*2),
+                    transforms.Transpose(), transforms.Normalize(0, 255.0),
                 ]
             ),
         )
@@ -152,14 +152,14 @@ def get_dataset(args, config):
             dataset = FFHQ(
                 path=os.path.join(args.exp, "datasets", "FFHQ"),
                 transform=transforms.Compose(
-                    [transforms.RandomHorizontalFlip(p=0.5), transforms.ToTensor()]
+                    [transforms.RandomHorizontalFlip(p=0.5), transforms.Transpose(), transforms.Normalize(0, 255.0)]
                 ),
                 resolution=config.data.image_size,
             )
         else:
             dataset = FFHQ(
                 path=os.path.join(args.exp, "datasets", "FFHQ"),
-                transform=transforms.ToTensor(),
+                transform=transforms.Transpose(), transforms.Normalize(0, 255.0),
                 resolution=config.data.image_size,
             )
 
@@ -183,14 +183,14 @@ def get_dataset(args, config):
 
 def logit_transform(image, lam=1e-6):
     image = lam + (1 - 2 * lam) * image
-    return torch.log(image) - torch.log1p(-image)
+    return paddle.log(image) - paddle.log1p(-image)
 
 
 def data_transform(config, X):
     if config.data.uniform_dequantization:
-        X = X / 256.0 * 255.0 + torch.rand_like(X) / 256.0
+        X = X / 256.0 * 255.0 + paddle.rand(X.shape) / 256.0
     if config.data.gaussian_dequantization:
-        X = X + torch.randn_like(X) * 0.01
+        X = X + paddle.randn(X.shape) * 0.01
 
     if config.data.rescaled:
         X = 2 * X - 1.0
@@ -198,18 +198,18 @@ def data_transform(config, X):
         X = logit_transform(X)
 
     if hasattr(config, "image_mean"):
-        return X - config.image_mean.to(X.device)[None, ...]
+        return X - config.image_mean.unsqueeze(0)
 
     return X
 
 
 def inverse_data_transform(config, X):
     if hasattr(config, "image_mean"):
-        X = X + config.image_mean.to(X.device)[None, ...]
+        X = X + config.image_mean.unsqueeze(0)
 
     if config.data.logit_transform:
-        X = torch.sigmoid(X)
+        X = paddle.nn.functional.sigmoid(X)
     elif config.data.rescaled:
         X = (X + 1.0) / 2.0
 
-    return torch.clamp(X, 0.0, 1.0)
+    return paddle.clip(X, 0.0, 1.0)

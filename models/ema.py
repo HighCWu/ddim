@@ -1,4 +1,4 @@
-import torch.nn as nn
+import paddle
 
 
 class EMAHelper(object):
@@ -7,37 +7,39 @@ class EMAHelper(object):
         self.shadow = {}
 
     def register(self, module):
-        if isinstance(module, nn.DataParallel):
-            module = module.module
+        if isinstance(module, paddle.DataParallel):
+            module = module._layers
         for name, param in module.named_parameters():
-            if param.requires_grad:
-                self.shadow[name] = param.data.clone()
+            if not param.stop_gradient:
+                self.shadow[name] = param.clone().detach()
 
     def update(self, module):
-        if isinstance(module, nn.DataParallel):
-            module = module.module
+        if isinstance(module, paddle.DataParallel):
+            module = module._layers
         for name, param in module.named_parameters():
-            if param.requires_grad:
-                self.shadow[name].data = (
-                    1. - self.mu) * param.data + self.mu * self.shadow[name].data
+            if not param.stop_gradient:
+                self.shadow[name] = ((
+                    1. - self.mu) * param + self.mu * self.shadow[name]).detach()
 
     def ema(self, module):
-        if isinstance(module, nn.DataParallel):
-            module = module.module
+        if isinstance(module, paddle.DataParallel):
+            module = module._layers
         for name, param in module.named_parameters():
-            if param.requires_grad:
-                param.data.copy_(self.shadow[name].data)
+            if not param.stop_gradient:
+                param.stop_gradient = True
+                param[:] = self.shadow[name]
+                param.stop_gradient = False
 
     def ema_copy(self, module):
-        if isinstance(module, nn.DataParallel):
-            inner_module = module.module
+        if isinstance(module, paddle.DataParallel):
+            inner_module = module._layers
             module_copy = type(inner_module)(
-                inner_module.config).to(inner_module.config.device)
-            module_copy.load_state_dict(inner_module.state_dict())
-            module_copy = nn.DataParallel(module_copy)
+                inner_module.config)
+            module_copy.set_state_dict(inner_module.state_dict())
+            module_copy = paddle.DataParallel(module_copy)
         else:
-            module_copy = type(module)(module.config).to(module.config.device)
-            module_copy.load_state_dict(module.state_dict())
+            module_copy = type(module)(module.config)
+            module_copy.set_state_dict(module.state_dict())
         # module_copy = copy.deepcopy(module)
         self.ema(module_copy)
         return module_copy
@@ -45,5 +47,5 @@ class EMAHelper(object):
     def state_dict(self):
         return self.shadow
 
-    def load_state_dict(self, state_dict):
+    def set_state_dict(self, state_dict):
         self.shadow = state_dict

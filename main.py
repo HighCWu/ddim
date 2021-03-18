@@ -5,13 +5,13 @@ import logging
 import yaml
 import sys
 import os
-import torch
+import paddle
 import numpy as np
-import torch.utils.tensorboard as tb
+import paddle.utils.tensorboard as tb
 
 from runners.diffusion import Diffusion
 
-torch.set_printoptions(sci_mode=False)
+paddle.set_printoptions(sci_mode=False)
 
 
 def parse_args_and_config():
@@ -182,17 +182,13 @@ def parse_args_and_config():
                         sys.exit(0)
 
     # add device
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = paddle.get_device()
     logging.info("Using device: {}".format(device))
     new_config.device = device
 
     # set random seed
-    torch.manual_seed(args.seed)
+    paddle.seed(args.seed)
     np.random.seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
-
-    torch.backends.cudnn.benchmark = True
 
     return args, new_config
 

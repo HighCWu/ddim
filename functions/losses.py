@@ -1,18 +1,18 @@
-import torch
+import paddle
 
 
 def noise_estimation_loss(model,
-                          x0: torch.Tensor,
-                          t: torch.LongTensor,
-                          e: torch.Tensor,
-                          b: torch.Tensor, keepdim=False):
-    a = (1-b).cumprod(dim=0).index_select(0, t).view(-1, 1, 1, 1)
+                          x0: paddle.Tensor,
+                          t: paddle.Tensor,
+                          e: paddle.Tensor,
+                          b: paddle.Tensor, keepFalse):
+    a = (1-b).cumprod(0).index_select(t, 0).reshape((-1, 1, 1, 1))
     x = x0 * a.sqrt() + e * (1.0 - a).sqrt()
-    output = model(x, t.float())
+    output = model(x, t.astype('float32'))
     if keepdim:
-        return (e - output).square().sum(dim=(1, 2, 3))
+        return (e - output).square().sum((1, 2, 3))
     else:
-        return (e - output).square().sum(dim=(1, 2, 3)).mean(dim=0)
+        return (e - output).square().sum((1, 2, 3)).mean(0)
 
 
 loss_registry = {

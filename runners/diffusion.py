@@ -5,8 +5,8 @@ import glob
 
 import numpy as np
 import tqdm
-import torch
-import torch.utils.data as data
+import paddle
+import paddle.io as data
 
 from models.diffusion import Model
 from models.ema import EMAHelper
@@ -15,12 +15,12 @@ from functions.losses import loss_registry
 from datasets import get_dataset, data_transform, inverse_data_transform
 from functions.ckpt_util import get_ckpt_path
 
-import torchvision.utils as tvu
+import paddle.vision.utils as tvu
 
 
-def torch2hwcuint8(x, clip=False):
+def paddle2hwcuint8(x, clip=False):
     if clip:
-        x = torch.clamp(x, -1, 1)
+        x = paddle.clip(x, -1, 1)
     x = (x + 1.0) / 2.0
     return x
 
@@ -63,11 +63,7 @@ class Diffusion(object):
         self.args = args
         self.config = config
         if device is None:
-            device = (
-                torch.device("cuda")
-                if torch.cuda.is_available()
-                else torch.device("cpu")
-            )
+            device = paddle.get_device()
         self.device = device
 
         self.model_var_type = config.model.var_type
@@ -77,23 +73,23 @@ class Diffusion(object):
             beta_end=config.diffusion.beta_end,
             num_diffusion_timesteps=config.diffusion.num_diffusion_timesteps,
         )
-        betas = self.betas = torch.from_numpy(betas).float().to(self.device)
+        betas = self.betas = paddle.to_tensor(betas).astype('float32')
         self.num_timesteps = betas.shape[0]
 
         alphas = 1.0 - betas
-        alphas_cumprod = alphas.cumprod(dim=0)
-        alphas_cumprod_prev = torch.cat(
-            [torch.ones(1).to(device), alphas_cumprod[:-1]], dim=0
+        alphas_cumprod = alphas.cumprod(0)
+        alphas_cumprod_prev = paddle.concat(
+            [paddle.ones(1), alphas_cumprod[:-1]], 0
         )
         posterior_variance = (
             betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
         )
         if self.model_var_type == "fixedlarge":
             self.logvar = betas.log()
-            # torch.cat(
-            # [posterior_variance[1:2], betas[1:]], dim=0).log()
+            # paddle.concat(
+            # [posterior_variance[1:2], betas[1:]], 0).log()
         elif self.model_var_type == "fixedsmall":
-            self.logvar = posterior_variance.clamp(min=1e-20).log()
+            self.logvar = posterior_variance.clip(min=1e-20).log()
 
     def train(self):
         args, config = self.args, self.config
@@ -104,11 +100,12 @@ class Diffusion(object):
             batch_size=config.training.batch_size,
             shuffle=True,
             num_workers=config.data.num_workers,
+            use_shared_memory=False,
         )
         model = Model(config)
 
-        model = model.to(self.device)
-        model = torch.nn.DataParallel(model)
+        model = model
+        model = paddle.DataParallel(model)
 
         optimizer = get_optimizer(self.config, model.parameters())
 
@@ -120,15 +117,15 @@ class Diffusion(object):
 
         start_epoch, step = 0, 0
         if self.args.resume_training:
-            states = torch.load(os.path.join(self.args.log_path, "ckpt.pth"))
-            model.load_state_dict(states[0])
+            states = paddle.load(os.path.join(self.args.log_path, "ckpt.pdparams"))
+            model.set_state_dict(states[0])
 
             states[1]["param_groups"][0]["eps"] = self.config.optim.eps
-            optimizer.load_state_dict(states[1])
+            optimizer.set_state_dict(states[1])
             start_epoch = states[2]
             step = states[3]
             if self.config.model.ema:
-                ema_helper.load_state_dict(states[4])
+                ema_helper.set_state_dict(states[4])
 
         for epoch in range(start_epoch, self.config.training.n_epochs):
             data_start = time.time()
@@ -139,16 +136,15 @@ class Diffusion(object):
                 model.train()
                 step += 1
 
-                x = x.to(self.device)
                 x = data_transform(self.config, x)
-                e = torch.randn_like(x)
+                e = paddle.randn(x.shape)
                 b = self.betas
 
                 # antithetic sampling
-                t = torch.randint(
+                t = paddle.randint(
                     low=0, high=self.num_timesteps, size=(n // 2 + 1,)
-                ).to(self.device)
-                t = torch.cat([t, self.num_timesteps - t - 1], dim=0)[:n]
+                )
+                t = paddle.concat([t, self.num_timesteps - t - 1], 0)[:n]
                 loss = loss_registry[config.model.type](model, x, t, e, b)
 
                 tb_logger.add_scalar("loss", loss, global_step=step)
@@ -161,7 +157,7 @@ class Diffusion(object):
                 loss.backward()
 
                 try:
-                    torch.nn.utils.clip_grad_norm_(
+                    paddle.nn.utils.clip_grad_norm_(
                         model.parameters(), config.optim.grad_clip
                     )
                 except Exception:
@@ -181,11 +177,11 @@ class Diffusion(object):
                     if self.config.model.ema:
                         states.append(ema_helper.state_dict())
 
-                    torch.save(
+                    paddle.save(
                         states,
-                        os.path.join(self.args.log_path, "ckpt_{}.pth".format(step)),
+                        os.path.join(self.args.log_path, "ckpt_{}.pdparams".format(step)),
                     )
-                    torch.save(states, os.path.join(self.args.log_path, "ckpt.pth"))
+                    paddle.save(states, os.path.join(self.args.log_path, "ckpt.pdparams"))
 
                 data_start = time.time()
 
@@ -194,25 +190,23 @@ class Diffusion(object):
 
         if not self.args.use_pretrained:
             if getattr(self.config.sampling, "ckpt_id", None) is None:
-                states = torch.load(
-                    os.path.join(self.args.log_path, "ckpt.pth"),
-                    map_location=self.config.device,
+                states = paddle.load(
+                    os.path.join(self.args.log_path, "ckpt.pdparams")
                 )
             else:
-                states = torch.load(
+                states = paddle.load(
                     os.path.join(
-                        self.args.log_path, f"ckpt_{self.config.sampling.ckpt_id}.pth"
-                    ),
-                    map_location=self.config.device,
+                        self.args.log_path, f"ckpt_{self.config.sampling.ckpt_id}.pdparams"
+                    )
                 )
-            model = model.to(self.device)
-            model = torch.nn.DataParallel(model)
-            model.load_state_dict(states[0], strict=True)
+            model = model
+            model = paddle.DataParallel(model)
+            model.set_state_dict(states[0], strict=True)
 
             if self.config.model.ema:
                 ema_helper = EMAHelper(mu=self.config.model.ema_rate)
                 ema_helper.register(model)
-                ema_helper.load_state_dict(states[-1])
+                ema_helper.set_state_dict(states[-1])
                 ema_helper.ema(model)
             else:
                 ema_helper = None
@@ -226,9 +220,8 @@ class Diffusion(object):
                 raise ValueError
             ckpt = get_ckpt_path(f"ema_{name}")
             print("Loading checkpoint {}".format(ckpt))
-            model.load_state_dict(torch.load(ckpt, map_location=self.device))
-            model.to(self.device)
-            model = torch.nn.DataParallel(model)
+            model.set_state_dict(paddle.load(ckpt))
+            model = paddle.DataParallel(model)
 
         model.eval()
 
@@ -248,17 +241,16 @@ class Diffusion(object):
         total_n_samples = 50000
         n_rounds = (total_n_samples - img_id) // config.sampling.batch_size
 
-        with torch.no_grad():
+        with paddle.no_grad():
             for _ in tqdm.tqdm(
                 range(n_rounds), desc="Generating image samples for FID evaluation."
             ):
                 n = config.sampling.batch_size
-                x = torch.randn(
+                x = paddle.randn(
                     n,
                     config.data.channels,
                     config.data.image_size,
                     config.data.image_size,
-                    device=self.device,
                 )
 
                 x = self.sample_image(x, model)
@@ -273,16 +265,15 @@ class Diffusion(object):
     def sample_sequence(self, model):
         config = self.config
 
-        x = torch.randn(
+        x = paddle.randn(
             8,
             config.data.channels,
             config.data.image_size,
             config.data.image_size,
-            device=self.device,
         )
 
         # NOTE: This means that we are producing each predicted x0, not x_{t-1} at timestep t.
-        with torch.no_grad():
+        with paddle.no_grad():
             _, x = self.sample_image(x, model, last=False)
 
         x = [inverse_data_transform(config, y) for y in x]
@@ -297,39 +288,37 @@ class Diffusion(object):
         config = self.config
 
         def slerp(z1, z2, alpha):
-            theta = torch.acos(torch.sum(z1 * z2) / (torch.norm(z1) * torch.norm(z2)))
+            theta = paddle.acos(paddle.sum(z1 * z2) / (paddle.norm(z1) * paddle.norm(z2)))
             return (
-                torch.sin((1 - alpha) * theta) / torch.sin(theta) * z1
-                + torch.sin(alpha * theta) / torch.sin(theta) * z2
+                paddle.sin((1 - alpha) * theta) / paddle.sin(theta) * z1
+                + paddle.sin(alpha * theta) / paddle.sin(theta) * z2
             )
 
-        z1 = torch.randn(
+        z1 = paddle.randn(
             1,
             config.data.channels,
             config.data.image_size,
             config.data.image_size,
-            device=self.device,
         )
-        z2 = torch.randn(
+        z2 = paddle.randn(
             1,
             config.data.channels,
             config.data.image_size,
             config.data.image_size,
-            device=self.device,
         )
-        alpha = torch.arange(0.0, 1.01, 0.1).to(z1.device)
+        alpha = paddle.arange(0.0, 1.01, 0.1)
         z_ = []
         for i in range(alpha.size(0)):
             z_.append(slerp(z1, z2, alpha[i]))
 
-        x = torch.cat(z_, dim=0)
+        x = paddle.concat(z_, 0)
         xs = []
 
         # Hard coded here, modify to your preferences
-        with torch.no_grad():
+        with paddle.no_grad():
             for i in range(0, x.size(0), 8):
                 xs.append(self.sample_image(x[i : i + 8], model))
-        x = inverse_data_transform(config, torch.cat(xs, dim=0))
+        x = inverse_data_transform(config, paddle.concat(xs, 0))
         for i in range(x.size(0)):
             tvu.save_image(x[i], os.path.join(self.args.image_folder, f"{i}.png"))
 

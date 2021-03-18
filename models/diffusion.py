@@ -1,6 +1,6 @@
 import math
-import torch
-import torch.nn as nn
+import paddle
+import paddle.nn as nn
 
 
 def get_timestep_embedding(timesteps, embedding_dim):
@@ -15,50 +15,49 @@ def get_timestep_embedding(timesteps, embedding_dim):
 
     half_dim = embedding_dim // 2
     emb = math.log(10000) / (half_dim - 1)
-    emb = torch.exp(torch.arange(half_dim, dtype=torch.float32) * -emb)
-    emb = emb.to(device=timesteps.device)
-    emb = timesteps.float()[:, None] * emb[None, :]
-    emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
+    emb = paddle.exp(paddle.arange(half_dim, dtype='float32') * - emb)
+    emb = timesteps.astype('float32').unsqueeze(1) * emb.unsqueeze(0)
+    emb = paddle.concat([paddle.sin(emb), paddle.cos(emb)], 1)
     if embedding_dim % 2 == 1:  # zero pad
-        emb = torch.nn.functional.pad(emb, (0, 1, 0, 0))
+        emb = paddle.nn.functional.pad(emb, (0, 1, 0, 0))
     return emb
 
 
 def nonlinearity(x):
     # swish
-    return x*torch.sigmoid(x)
+    return x*paddle.nn.functional.sigmoid(x)
 
 
 def Normalize(in_channels):
-    return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+    return paddle.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
 
 
-class Upsample(nn.Module):
+class Upsample(nn.Layer):
     def __init__(self, in_channels, with_conv):
         super().__init__()
         self.with_conv = with_conv
         if self.with_conv:
-            self.conv = torch.nn.Conv2d(in_channels,
+            self.conv = paddle.nn.Conv2D(in_channels,
                                         in_channels,
                                         kernel_size=3,
                                         stride=1,
                                         padding=1)
 
     def forward(self, x):
-        x = torch.nn.functional.interpolate(
+        x = paddle.nn.functional.interpolate(
             x, scale_factor=2.0, mode="nearest")
         if self.with_conv:
             x = self.conv(x)
         return x
 
 
-class Downsample(nn.Module):
+class Downsample(nn.Layer):
     def __init__(self, in_channels, with_conv):
         super().__init__()
         self.with_conv = with_conv
         if self.with_conv:
-            # no asymmetric padding in torch conv, must do it ourselves
-            self.conv = torch.nn.Conv2d(in_channels,
+            # no asymmetric padding in paddle conv, must do it ourselves
+            self.conv = paddle.nn.Conv2D(in_channels,
                                         in_channels,
                                         kernel_size=3,
                                         stride=2,
@@ -67,14 +66,14 @@ class Downsample(nn.Module):
     def forward(self, x):
         if self.with_conv:
             pad = (0, 1, 0, 1)
-            x = torch.nn.functional.pad(x, pad, mode="constant", value=0)
+            x = paddle.nn.functional.pad(x, pad, mode="constant", value=0)
             x = self.conv(x)
         else:
-            x = torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
+            x = paddle.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
         return x
 
 
-class ResnetBlock(nn.Module):
+class ResnetBlock(nn.Layer):
     def __init__(self, *, in_channels, out_channels=None, conv_shortcut=False,
                  dropout, temb_channels=512):
         super().__init__()
@@ -84,29 +83,29 @@ class ResnetBlock(nn.Module):
         self.use_conv_shortcut = conv_shortcut
 
         self.norm1 = Normalize(in_channels)
-        self.conv1 = torch.nn.Conv2d(in_channels,
+        self.conv1 = paddle.nn.Conv2D(in_channels,
                                      out_channels,
                                      kernel_size=3,
                                      stride=1,
                                      padding=1)
-        self.temb_proj = torch.nn.Linear(temb_channels,
+        self.temb_proj = paddle.nn.Linear(temb_channels,
                                          out_channels)
         self.norm2 = Normalize(out_channels)
-        self.dropout = torch.nn.Dropout(dropout)
-        self.conv2 = torch.nn.Conv2d(out_channels,
+        self.dropout = paddle.nn.Dropout(dropout)
+        self.conv2 = paddle.nn.Conv2D(out_channels,
                                      out_channels,
                                      kernel_size=3,
                                      stride=1,
                                      padding=1)
         if self.in_channels != self.out_channels:
             if self.use_conv_shortcut:
-                self.conv_shortcut = torch.nn.Conv2d(in_channels,
+                self.conv_shortcut = paddle.nn.Conv2D(in_channels,
                                                      out_channels,
                                                      kernel_size=3,
                                                      stride=1,
                                                      padding=1)
             else:
-                self.nin_shortcut = torch.nn.Conv2d(in_channels,
+                self.nin_shortcut = paddle.nn.Conv2D(in_channels,
                                                     out_channels,
                                                     kernel_size=1,
                                                     stride=1,
@@ -118,7 +117,7 @@ class ResnetBlock(nn.Module):
         h = nonlinearity(h)
         h = self.conv1(h)
 
-        h = h + self.temb_proj(nonlinearity(temb))[:, :, None, None]
+        h = h + self.temb_proj(nonlinearity(temb)).unsqueeze(-1).unsqueeze(-1)
 
         h = self.norm2(h)
         h = nonlinearity(h)
@@ -134,28 +133,28 @@ class ResnetBlock(nn.Module):
         return x+h
 
 
-class AttnBlock(nn.Module):
+class AttnBlock(nn.Layer):
     def __init__(self, in_channels):
         super().__init__()
         self.in_channels = in_channels
 
         self.norm = Normalize(in_channels)
-        self.q = torch.nn.Conv2d(in_channels,
+        self.q = paddle.nn.Conv2D(in_channels,
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
                                  padding=0)
-        self.k = torch.nn.Conv2d(in_channels,
+        self.k = paddle.nn.Conv2D(in_channels,
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
                                  padding=0)
-        self.v = torch.nn.Conv2d(in_channels,
+        self.v = paddle.nn.Conv2D(in_channels,
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
                                  padding=0)
-        self.proj_out = torch.nn.Conv2d(in_channels,
+        self.proj_out = paddle.nn.Conv2D(in_channels,
                                         in_channels,
                                         kernel_size=1,
                                         stride=1,
@@ -170,26 +169,26 @@ class AttnBlock(nn.Module):
 
         # compute attention
         b, c, h, w = q.shape
-        q = q.reshape(b, c, h*w)
-        q = q.permute(0, 2, 1)   # b,hw,c
-        k = k.reshape(b, c, h*w)  # b,c,hw
-        w_ = torch.bmm(q, k)     # b,hw,hw    w[b,i,j]=sum_c q[b,i,c]k[b,c,j]
+        q = q.reshape([b, c, h*w])
+        q = q.transpose([0, 2, 1])   # b,hw,c
+        k = k.reshape([b, c, h*w])  # b,c,hw
+        w_ = paddle.bmm(q, k)     # b,hw,hw    w[b,i,j]=sum_c q[b,i,c]k[b,c,j]
         w_ = w_ * (int(c)**(-0.5))
-        w_ = torch.nn.functional.softmax(w_, dim=2)
+        w_ = paddle.nn.functional.softmax(w_, 2)
 
         # attend to values
-        v = v.reshape(b, c, h*w)
-        w_ = w_.permute(0, 2, 1)   # b,hw,hw (first hw of k, second of q)
+        v = v.reshape([b, c, h*w])
+        w_ = w_.transpose([0, 2, 1])   # b,hw,hw (first hw of k, second of q)
         # b, c,hw (hw of q) h_[b,c,j] = sum_i v[b,c,i] w_[b,i,j]
-        h_ = torch.bmm(v, w_)
-        h_ = h_.reshape(b, c, h, w)
+        h_ = paddle.bmm(v, w_)
+        h_ = h_.reshape([b, c, h, w])
 
         h_ = self.proj_out(h_)
 
         return x+h_
 
 
-class Model(nn.Module):
+class Model(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -203,7 +202,7 @@ class Model(nn.Module):
         num_timesteps = config.diffusion.num_diffusion_timesteps
         
         if config.model.type == 'bayesian':
-            self.logvar = nn.Parameter(torch.zeros(num_timesteps))
+            self.logvar = self.create_parameter([num_timesteps,], default_initializer=nn.initializer.Constant(0.0))
         
         self.ch = ch
         self.temb_ch = self.ch*4
@@ -213,16 +212,16 @@ class Model(nn.Module):
         self.in_channels = in_channels
 
         # timestep embedding
-        self.temb = nn.Module()
-        self.temb.dense = nn.ModuleList([
-            torch.nn.Linear(self.ch,
+        self.temb = nn.Layer()
+        self.temb.dense = nn.LayerList([
+            paddle.nn.Linear(self.ch,
                             self.temb_ch),
-            torch.nn.Linear(self.temb_ch,
+            paddle.nn.Linear(self.temb_ch,
                             self.temb_ch),
         ])
 
         # downsampling
-        self.conv_in = torch.nn.Conv2d(in_channels,
+        self.conv_in = paddle.nn.Conv2D(in_channels,
                                        self.ch,
                                        kernel_size=3,
                                        stride=1,
@@ -230,11 +229,11 @@ class Model(nn.Module):
 
         curr_res = resolution
         in_ch_mult = (1,)+ch_mult
-        self.down = nn.ModuleList()
+        self.down = nn.LayerList()
         block_in = None
         for i_level in range(self.num_resolutions):
-            block = nn.ModuleList()
-            attn = nn.ModuleList()
+            block = nn.LayerList()
+            attn = nn.LayerList()
             block_in = ch*in_ch_mult[i_level]
             block_out = ch*ch_mult[i_level]
             for i_block in range(self.num_res_blocks):
@@ -245,7 +244,7 @@ class Model(nn.Module):
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(AttnBlock(block_in))
-            down = nn.Module()
+            down = nn.Layer()
             down.block = block
             down.attn = attn
             if i_level != self.num_resolutions-1:
@@ -254,7 +253,7 @@ class Model(nn.Module):
             self.down.append(down)
 
         # middle
-        self.mid = nn.Module()
+        self.mid = nn.Layer()
         self.mid.block_1 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
@@ -266,10 +265,10 @@ class Model(nn.Module):
                                        dropout=dropout)
 
         # upsampling
-        self.up = nn.ModuleList()
+        self.up = nn.LayerList()
         for i_level in reversed(range(self.num_resolutions)):
-            block = nn.ModuleList()
-            attn = nn.ModuleList()
+            block = nn.LayerList()
+            attn = nn.LayerList()
             block_out = ch*ch_mult[i_level]
             skip_in = ch*ch_mult[i_level]
             for i_block in range(self.num_res_blocks+1):
@@ -282,7 +281,7 @@ class Model(nn.Module):
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(AttnBlock(block_in))
-            up = nn.Module()
+            up = nn.Layer()
             up.block = block
             up.attn = attn
             if i_level != 0:
@@ -292,7 +291,7 @@ class Model(nn.Module):
 
         # end
         self.norm_out = Normalize(block_in)
-        self.conv_out = torch.nn.Conv2d(block_in,
+        self.conv_out = paddle.nn.Conv2D(block_in,
                                         out_ch,
                                         kernel_size=3,
                                         stride=1,
@@ -328,7 +327,7 @@ class Model(nn.Module):
         for i_level in reversed(range(self.num_resolutions)):
             for i_block in range(self.num_res_blocks+1):
                 h = self.up[i_level].block[i_block](
-                    torch.cat([h, hs.pop()], dim=1), temb)
+                    paddle.concat([h, hs.pop()], 1), temb)
                 if len(self.up[i_level].attn) > 0:
                     h = self.up[i_level].attn[i_block](h)
             if i_level != 0:
