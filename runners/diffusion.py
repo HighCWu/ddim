@@ -15,7 +15,8 @@ from functions.losses import loss_registry
 from datasets import get_dataset, data_transform, inverse_data_transform
 from functions.ckpt_util import get_ckpt_path
 
-import paddle.vision.utils as tvu
+import numpy as np
+from PIL import Image
 
 
 def paddle2hwcuint8(x, clip=False):
@@ -131,7 +132,7 @@ class Diffusion(object):
             data_start = time.time()
             data_time = 0
             for i, (x, y) in enumerate(train_loader):
-                n = x.size(0)
+                n = x.shape[0]
                 data_time += time.time() - data_start
                 model.train()
                 step += 1
@@ -257,8 +258,8 @@ class Diffusion(object):
                 x = inverse_data_transform(config, x)
 
                 for i in range(n):
-                    tvu.save_image(
-                        x[i], os.path.join(self.args.image_folder, f"{img_id}.png")
+                    Image.fromarray(np.uint8(x[i].numpy().transpose([1,2,0])*255)).save(
+                        os.path.join(self.args.image_folder, f"{img_id}.png")
                     )
                     img_id += 1
 
@@ -279,9 +280,9 @@ class Diffusion(object):
         x = [inverse_data_transform(config, y) for y in x]
 
         for i in range(len(x)):
-            for j in range(x[i].size(0)):
-                tvu.save_image(
-                    x[i][j], os.path.join(self.args.image_folder, f"{j}_{i}.png")
+            for j in range(x[i].shape[0]):
+                Image.fromarray(np.uint8(x[i][j].numpy().transpose([1,2,0])*255)).save(
+                    os.path.join(self.args.image_folder, f"{j}_{i}.png")
                 )
 
     def sample_interpolation(self, model):
@@ -308,7 +309,7 @@ class Diffusion(object):
         )
         alpha = paddle.arange(0.0, 1.01, 0.1)
         z_ = []
-        for i in range(alpha.size(0)):
+        for i in range(alpha.shape[0]):
             z_.append(slerp(z1, z2, alpha[i]))
 
         x = paddle.concat(z_, 0)
@@ -316,11 +317,11 @@ class Diffusion(object):
 
         # Hard coded here, modify to your preferences
         with paddle.no_grad():
-            for i in range(0, x.size(0), 8):
+            for i in range(0, x.shape[0], 8):
                 xs.append(self.sample_image(x[i : i + 8], model))
         x = inverse_data_transform(config, paddle.concat(xs, 0))
-        for i in range(x.size(0)):
-            tvu.save_image(x[i], os.path.join(self.args.image_folder, f"{i}.png"))
+        for i in range(x.shape[0]):
+            Image.fromarray(np.uint8(x[i].numpy().transpose([1,2,0])*255)).save(os.path.join(self.args.image_folder, f"{i}.png"))
 
     def sample_image(self, x, model, last=True):
         try:
