@@ -19,7 +19,7 @@ def get_timestep_embedding(timesteps, embedding_dim):
     emb = timesteps.astype('float32').unsqueeze(1) * emb.unsqueeze(0)
     emb = paddle.concat([paddle.sin(emb), paddle.cos(emb)], 1)
     if embedding_dim % 2 == 1:  # zero pad
-        emb = paddle.nn.functional.pad(emb, (0, 1, 0, 0))
+        emb = paddle.nn.functional.pad(emb, [0, 1, 0, 0])
     return emb
 
 
@@ -29,7 +29,7 @@ def nonlinearity(x):
 
 
 def Normalize(in_channels):
-    return paddle.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+    return paddle.nn.GroupNorm(num_groups=32, num_channels=in_channels, epsilon=1e-6)
 
 
 class Upsample(nn.Layer):
@@ -65,7 +65,7 @@ class Downsample(nn.Layer):
 
     def forward(self, x):
         if self.with_conv:
-            pad = (0, 1, 0, 1)
+            pad = [0, 1, 0, 1]
             x = paddle.nn.functional.pad(x, pad, mode="constant", value=0)
             x = self.conv(x)
         else:
@@ -265,7 +265,7 @@ class Model(nn.Layer):
                                        dropout=dropout)
 
         # upsampling
-        self.up = nn.LayerList()
+        self.up = []
         for i_level in reversed(range(self.num_resolutions)):
             block = nn.LayerList()
             attn = nn.LayerList()
@@ -288,6 +288,7 @@ class Model(nn.Layer):
                 up.upsample = Upsample(block_in, resamp_with_conv)
                 curr_res = curr_res * 2
             self.up.insert(0, up)  # prepend to get consistent order
+        self.up = nn.LayerList(self.up)
 
         # end
         self.norm_out = Normalize(block_in)

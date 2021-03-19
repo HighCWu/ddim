@@ -118,15 +118,15 @@ class Diffusion(object):
 
         start_epoch, step = 0, 0
         if self.args.resume_training:
-            states = paddle.load(os.path.join(self.args.log_path, "ckpt.pdparams"))
-            model.set_state_dict(states[0])
+            states = paddle.load(os.path.join(self.args.log_path, "ckpt.pdl"))
+            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_"})
 
-            states[1]["param_groups"][0]["eps"] = self.config.optim.eps
-            optimizer.set_state_dict(states[1])
-            start_epoch = states[2]
-            step = states[3]
+            optimizer.set_state_dict({k.split("$optimizer_")[-1]: v for k, v in states.items() if "$optimizer_"})
+            optimizer._epsilon = self.config.optim.eps
+            start_epoch = states["$epoch"]
+            step = states["$step"]
             if self.config.model.ema:
-                ema_helper.set_state_dict(states[4])
+                ema_helper.set_state_dict({k.split("$ema_")[-1]: v for k, v in states.items() if "$ema_"})
 
         for epoch in range(start_epoch, self.config.training.n_epochs):
             data_start = time.time()
@@ -143,7 +143,7 @@ class Diffusion(object):
 
                 # antithetic sampling
                 t = paddle.randint(
-                    low=0, high=self.num_timesteps, size=(n // 2 + 1,)
+                    low=0, high=self.num_timesteps, shape=(n // 2 + 1,)
                 )
                 t = paddle.concat([t, self.num_timesteps - t - 1], 0)[:n]
                 loss = loss_registry[config.model.type](model, x, t, e, b)
@@ -151,38 +151,31 @@ class Diffusion(object):
                 vdl_logger.add_scalar("loss", loss, step=step)
 
                 logging.info(
-                    f"step: {step}, loss: {loss.item()}, data time: {data_time / (i+1)}"
+                    f"step: {step}, loss: {loss.numpy()[0]}, data time: {data_time / (i+1)}"
                 )
 
-                optimizer.zero_grad()
+                optimizer.clear_grad()
                 loss.backward()
-
-                try:
-                    paddle.nn.utils.clip_grad_norm_(
-                        model.parameters(), config.optim.grad_clip
-                    )
-                except Exception:
-                    pass
                 optimizer.step()
 
                 if self.config.model.ema:
                     ema_helper.update(model)
 
                 if step % self.config.training.snapshot_freq == 0 or step == 1:
-                    states = [
-                        model.state_dict(),
-                        optimizer.state_dict(),
-                        epoch,
-                        step,
-                    ]
+                    states = dict(
+                        **{"$model_"+k: v for k, v in model.state_dict().items()},
+                        **{"$optimizer_"+k: v for k, v in optimizer.state_dict().items()},
+                        **{"$epoch": epoch},
+                        **{"$step": step},
+                    )
                     if self.config.model.ema:
-                        states.append(ema_helper.state_dict())
+                        states.update({"$ema_"+k: v for k, v in ema_helper.state_dict().items()})
 
                     paddle.save(
                         states,
-                        os.path.join(self.args.log_path, "ckpt_{}.pdparams".format(step)),
+                        os.path.join(self.args.log_path, "ckpt_{}.pdl".format(step)),
                     )
-                    paddle.save(states, os.path.join(self.args.log_path, "ckpt.pdparams"))
+                    paddle.save(states, os.path.join(self.args.log_path, "ckpt.pdl"))
 
                 data_start = time.time()
 
@@ -192,22 +185,22 @@ class Diffusion(object):
         if not self.args.use_pretrained:
             if getattr(self.config.sampling, "ckpt_id", None) is None:
                 states = paddle.load(
-                    os.path.join(self.args.log_path, "ckpt.pdparams")
+                    os.path.join(self.args.log_path, "ckpt.pdl")
                 )
             else:
                 states = paddle.load(
                     os.path.join(
-                        self.args.log_path, f"ckpt_{self.config.sampling.ckpt_id}.pdparams"
+                        self.args.log_path, f"ckpt_{self.config.sampling.ckpt_id}.pdl"
                     )
                 )
             model = model
             model = paddle.DataParallel(model)
-            model.set_state_dict(states[0], strict=True)
+            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_"}, strict=True)
 
             if self.config.model.ema:
                 ema_helper = EMAHelper(mu=self.config.model.ema_rate)
                 ema_helper.register(model)
-                ema_helper.set_state_dict(states[-1])
+                ema_helper.set_state_dict({k.split("$ema_")[-1]: v for k, v in states.items() if "$ema_"})
                 ema_helper.ema(model)
             else:
                 ema_helper = None
