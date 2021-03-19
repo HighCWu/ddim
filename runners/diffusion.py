@@ -259,12 +259,12 @@ class Diffusion(object):
     def sample_sequence(self, model):
         config = self.config
 
-        x = paddle.randn(
+        x = paddle.randn([
             8,
             config.data.channels,
             config.data.image_size,
             config.data.image_size,
-        )
+        ])
 
         # NOTE: This means that we are producing each predicted x0, not x_{t-1} at timestep t.
         with paddle.no_grad():

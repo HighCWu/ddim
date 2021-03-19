@@ -57,16 +57,33 @@ def get_ckpt_path(name, root=None, check=False):
         name = name.replace('church_outdoor', 'church')
     assert name in URL_MAP
     # Modify the path when necessary
-    cachedir = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("/atlas/u/tsong/.cache"))
+    cachedir = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
     root = (
         root
         if root is not None
         else os.path.join(cachedir, "diffusion_models_converted")
     )
     path = os.path.join(root, CKPT_MAP[name])
+
+    if os.path.exists(path + ".pdl"):
+        return path + ".pdl"
+
     if not os.path.exists(path) or (check and not md5_hash(path) == MD5_MAP[name]):
         print("Downloading {} model from {} to {}".format(name, URL_MAP[name], path))
         download(URL_MAP[name], path)
         md5 = md5_hash(path)
         assert md5 == MD5_MAP[name], md5
+    
+    import torch
+    import paddle
+    state_dict = torch.load(path, map_location="cpu")
+    state_dict_pp = {}
+    for key, value in state_dict.items():
+        value = paddle.to_tensor(value.numpy())
+        if ('temb_proj' in key or 'dense' in key) and len(value.shape) == 2:
+            value = value.transpose([1,0])
+        state_dict_pp[key] = value
+    path = path + ".pdl"
+    paddle.save(state_dict_pp, path)
+
     return path

@@ -15,7 +15,7 @@ def generalized_steps(x, seq, model, b, **kwargs):
         xs = [x]
         for i, j in zip(reversed(seq), reversed(seq_next)):
             t = (paddle.ones([n]) * i)
-            next_t = (paddle.ones([0]) * j)
+            next_t = (paddle.ones([n]) * j)
             at = compute_alpha(b, t.astype('int64'))
             at_next = compute_alpha(b, next_t.astype('int64'))
             xt = xs[-1]
