@@ -24,10 +24,14 @@ if 'cumprod' not in paddle.__dict__:
         def get_slc(index):
             return [slices[i][index] for i in range(len(x.shape))]
 
-        return paddle.stack([
+        y = paddle.stack([
             paddle.prod(x[tuple(get_slc(i))], axis=axis)
             for i in range(axis_length)
         ], axis)
+        if len(x.shape) == 1:
+            y = y[:,0]
+        
+        return y
 
     paddle.cumprod = cumprod
     paddle.Tensor.cumprod = lambda self, axis=None: cumprod(self, axis)

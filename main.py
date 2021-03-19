@@ -7,7 +7,7 @@ import sys
 import os
 import paddle
 import numpy as np
-import paddle.utils.tensorboard as tb
+import visualdl as vdl
 
 from runners.diffusion import Diffusion
 
@@ -95,7 +95,7 @@ def parse_args_and_config():
         config = yaml.safe_load(f)
     new_config = dict2namespace(config)
 
-    tb_path = os.path.join(args.exp, "tensorboard", args.doc)
+    vdl_path = os.path.join(args.exp, "visualdl", args.doc)
 
     if not args.test and not args.sample:
         if not args.resume_training:
@@ -110,10 +110,10 @@ def parse_args_and_config():
 
                 if overwrite:
                     shutil.rmtree(args.log_path)
-                    shutil.rmtree(tb_path)
+                    shutil.rmtree(vdl_path)
                     os.makedirs(args.log_path)
-                    if os.path.exists(tb_path):
-                        shutil.rmtree(tb_path)
+                    if os.path.exists(vdl_path):
+                        shutil.rmtree(vdl_path)
                 else:
                     print("Folder exists. Program halted.")
                     sys.exit(0)
@@ -123,7 +123,7 @@ def parse_args_and_config():
             with open(os.path.join(args.log_path, "config.yml"), "w") as f:
                 yaml.dump(new_config, f, default_flow_style=False)
 
-        new_config.tb_logger = tb.SummaryWriter(log_dir=tb_path)
+        new_config.vdl_logger = vdl.LogWriter(log_dir=vdl_path)
         # setup logger
         level = getattr(logging, args.verbose.upper(), None)
         if not isinstance(level, int):

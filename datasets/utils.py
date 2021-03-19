@@ -2,7 +2,7 @@ import os
 import os.path
 import hashlib
 import errno
-from paddle.utils.model_zoo import tqdm
+from tqdm import tqdm
 
 
 def gen_bar_updater():

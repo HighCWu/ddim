@@ -80,7 +80,7 @@ class Diffusion(object):
         alphas = 1.0 - betas
         alphas_cumprod = alphas.cumprod(0)
         alphas_cumprod_prev = paddle.concat(
-            [paddle.ones(1), alphas_cumprod[:-1]], 0
+            [paddle.ones([1]), alphas_cumprod[:-1]], 0
         )
         posterior_variance = (
             betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
@@ -94,7 +94,7 @@ class Diffusion(object):
 
     def train(self):
         args, config = self.args, self.config
-        tb_logger = self.config.tb_logger
+        vdl_logger = self.config.vdl_logger
         dataset, test_dataset = get_dataset(args, config)
         train_loader = data.DataLoader(
             dataset,
@@ -148,7 +148,7 @@ class Diffusion(object):
                 t = paddle.concat([t, self.num_timesteps - t - 1], 0)[:n]
                 loss = loss_registry[config.model.type](model, x, t, e, b)
 
-                tb_logger.add_scalar("loss", loss, global_step=step)
+                vdl_logger.add_scalar("loss", loss, step=step)
 
                 logging.info(
                     f"step: {step}, loss: {loss.item()}, data time: {data_time / (i+1)}"

@@ -1,5 +1,5 @@
 import paddle.nn as nn
-import paddle.optim as optim
+import paddle.optimizer as optim
 
 
 def get_optimizer(config, parameters):

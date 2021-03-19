@@ -5,7 +5,6 @@ import os.path
 import io
 from collections.abc import Iterable
 import pickle
-from paddle.vision.datasets.utils import verify_str_arg, iterable_to_str
 
 
 class LSUNClass(VisionDataset):
@@ -109,7 +108,7 @@ class LSUN(VisionDataset):
         dset_opts = ["train", "val", "test"]
 
         try:
-            verify_str_arg(classes, "classes", dset_opts)
+            # verify_str_arg(classes, "classes", dset_opts)
             if classes == "test":
                 classes = [classes]
             else:
@@ -128,18 +127,18 @@ class LSUN(VisionDataset):
                 "but got type {}."
             )
             for c in classes:
-                verify_str_arg(c, custom_msg=msg_fmtstr.format(type(c)))
+                # verify_str_arg(c, custom_msg=msg_fmtstr.format(type(c)))
                 c_short = c.split("_")
                 category, dset_opt = "_".join(c_short[:-1]), c_short[-1]
 
                 msg_fmtstr = "Unknown value '{}' for {}. Valid values are {{{}}}."
-                msg = msg_fmtstr.format(
-                    category, "LSUN class", iterable_to_str(categories)
-                )
-                verify_str_arg(category, valid_values=categories, custom_msg=msg)
+                # msg = msg_fmtstr.format(
+                #     category, "LSUN class", iterable_to_str(categories)
+                # )
+                # verify_str_arg(category, valid_values=categories, custom_msg=msg)
 
-                msg = msg_fmtstr.format(dset_opt, "postfix", iterable_to_str(dset_opts))
-                verify_str_arg(dset_opt, valid_values=dset_opts, custom_msg=msg)
+                # msg = msg_fmtstr.format(dset_opt, "postfix", iterable_to_str(dset_opts))
+                # verify_str_arg(dset_opt, valid_values=dset_opts, custom_msg=msg)
 
         return classes
 

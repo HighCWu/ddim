@@ -36,7 +36,7 @@ def get_dataset(args, config):
         tran_transform = transforms.Compose(
             [
                 transforms.Resize([config.data.image_size]*2),
-                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomHorizontalFlip(prob=0.5),
                 transforms.Transpose(), transforms.Normalize(0, 255.0),
             ]
         )
@@ -117,7 +117,7 @@ def get_dataset(args, config):
                     [
                         transforms.Resize([config.data.image_size]*2),
                         transforms.CenterCrop((config.data.image_size,)*2),
-                        transforms.RandomHorizontalFlip(p=0.5),
+                        transforms.RandomHorizontalFlip(prob=0.5),
                         transforms.Transpose(), transforms.Normalize(0, 255.0),
                     ]
                 ),
@@ -152,14 +152,14 @@ def get_dataset(args, config):
             dataset = FFHQ(
                 path=os.path.join(args.exp, "datasets", "FFHQ"),
                 transform=transforms.Compose(
-                    [transforms.RandomHorizontalFlip(p=0.5), transforms.Transpose(), transforms.Normalize(0, 255.0)]
+                    [transforms.RandomHorizontalFlip(prob=0.5), transforms.Transpose(), transforms.Normalize(0, 255.0)]
                 ),
                 resolution=config.data.image_size,
             )
         else:
             dataset = FFHQ(
                 path=os.path.join(args.exp, "datasets", "FFHQ"),
-                transform=transforms.Transpose(), transforms.Normalize(0, 255.0),
+                transform=transforms.Compose(transforms.Transpose(), transforms.Normalize(0, 255.0)),
                 resolution=config.data.image_size,
             )
 
