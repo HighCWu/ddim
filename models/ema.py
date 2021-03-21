@@ -19,7 +19,7 @@ class EMAHelper(object):
         for name, param in module.named_parameters():
             if not param.stop_gradient:
                 self.shadow[name] = ((
-                    1. - self.mu) * param + self.mu * self.shadow[name]).detach()
+                    1. - self.mu) * param + self.mu * paddle.to_tensor(self.shadow[name])).detach()
 
     def ema(self, module):
         if isinstance(module, paddle.DataParallel):
