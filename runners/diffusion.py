@@ -195,7 +195,7 @@ class Diffusion(object):
                 )
             model = model
             model = paddle.DataParallel(model)
-            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_"}, strict=True)
+            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_"})
 
             if self.config.model.ema:
                 ema_helper = EMAHelper(mu=self.config.model.ema_rate)
