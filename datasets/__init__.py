@@ -30,29 +30,29 @@ class Crop(object):
 def get_dataset(args, config):
     if config.data.random_flip is False:
         tran_transform = test_transform = transforms.Compose(
-            [transforms.Resize([config.data.image_size]*2), transforms.Transpose(), transforms.Normalize(0, 255.0)]
+            [transforms.Resize([config.data.image_size]*2), transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0]
         )
     else:
         tran_transform = transforms.Compose(
             [
                 transforms.Resize([config.data.image_size]*2),
                 transforms.RandomHorizontalFlip(prob=0.5),
-                transforms.Transpose(), transforms.Normalize(0, 255.0),
+                transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0,
             ]
         )
         test_transform = transforms.Compose(
-            [transforms.Resize([config.data.image_size]*2), transforms.Transpose(), transforms.Normalize(0, 255.0)]
+            [transforms.Resize([config.data.image_size]*2), transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0]
         )
 
     if config.data.dataset == "CIFAR10":
         dataset = Cifar10(
-            os.path.join(args.exp, "datasets", "cifar10"),
+            # os.path.join(args.exp, "datasets", "cifar10"),
             mode="train", 
             download=True,
             transform=tran_transform,
         )
         test_dataset = Cifar10(
-            os.path.join(args.exp, "datasets", "cifar10_test"),
+            # os.path.join(args.exp, "datasets", "cifar10_test"),
             mode="test", 
             download=True,
             transform=test_transform,
@@ -74,7 +74,7 @@ def get_dataset(args, config):
                         Crop(x1, x2, y1, y2),
                         transforms.Resize([config.data.image_size]*2),
                         transforms.RandomHorizontalFlip(),
-                        transforms.Transpose(), transforms.Normalize(0, 255.0),
+                        transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0,
                     ]
                 ),
                 download=True,
@@ -87,7 +87,7 @@ def get_dataset(args, config):
                     [
                         Crop(x1, x2, y1, y2),
                         transforms.Resize([config.data.image_size]*2),
-                        transforms.Transpose(), transforms.Normalize(0, 255.0),
+                        transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0,
                     ]
                 ),
                 download=True,
@@ -100,7 +100,7 @@ def get_dataset(args, config):
                 [
                     Crop(x1, x2, y1, y2),
                     transforms.Resize([config.data.image_size]*2),
-                    transforms.Transpose(), transforms.Normalize(0, 255.0),
+                    transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0,
                 ]
             ),
             download=True,
@@ -118,7 +118,7 @@ def get_dataset(args, config):
                         transforms.Resize([config.data.image_size]*2),
                         transforms.CenterCrop((config.data.image_size,)*2),
                         transforms.RandomHorizontalFlip(prob=0.5),
-                        transforms.Transpose(), transforms.Normalize(0, 255.0),
+                        transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0,
                     ]
                 ),
             )
@@ -130,7 +130,7 @@ def get_dataset(args, config):
                     [
                         transforms.Resize([config.data.image_size]*2),
                         transforms.CenterCrop((config.data.image_size,)*2),
-                        transforms.Transpose(), transforms.Normalize(0, 255.0),
+                        transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0,
                     ]
                 ),
             )
@@ -142,7 +142,7 @@ def get_dataset(args, config):
                 [
                     transforms.Resize([config.data.image_size]*2),
                     transforms.CenterCrop((config.data.image_size,)*2),
-                    transforms.Transpose(), transforms.Normalize(0, 255.0),
+                    transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0,
                 ]
             ),
         )
@@ -152,14 +152,14 @@ def get_dataset(args, config):
             dataset = FFHQ(
                 path=os.path.join(args.exp, "datasets", "FFHQ"),
                 transform=transforms.Compose(
-                    [transforms.RandomHorizontalFlip(prob=0.5), transforms.Transpose(), transforms.Normalize(0, 255.0)]
+                    [transforms.RandomHorizontalFlip(prob=0.5), transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0]
                 ),
                 resolution=config.data.image_size,
             )
         else:
             dataset = FFHQ(
                 path=os.path.join(args.exp, "datasets", "FFHQ"),
-                transform=transforms.Compose(transforms.Transpose(), transforms.Normalize(0, 255.0)),
+                transform=transforms.Compose(transforms.Transpose(), lambda x: x if x.dtype != np.uint8 else x.astype('float32')/255.0),
                 resolution=config.data.image_size,
             )
 
