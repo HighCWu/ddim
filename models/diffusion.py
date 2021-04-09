@@ -75,7 +75,7 @@ class Downsample(nn.Layer):
 
 class ResnetBlock(nn.Layer):
     def __init__(self, *, in_channels, out_channels=None, conv_shortcut=False,
-                 dropout, temb_channels=512):
+                 dropout, temb_channels=512, use_scale_shift_norm=False):
         super().__init__()
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
@@ -89,7 +89,7 @@ class ResnetBlock(nn.Layer):
                                      stride=1,
                                      padding=1)
         self.temb_proj = paddle.nn.Linear(temb_channels,
-                                         out_channels)
+                                         out_channels * 2 if use_scale_shift_norm else out_channels)
         self.norm2 = Normalize(out_channels)
         self.dropout = paddle.nn.Dropout(dropout)
         self.conv2 = paddle.nn.Conv2D(out_channels,
@@ -110,6 +110,8 @@ class ResnetBlock(nn.Layer):
                                                     kernel_size=1,
                                                     stride=1,
                                                     padding=0)
+        
+        self.use_scale_shift_norm = use_scale_shift_norm
 
     def forward(self, x, temb):
         h = x
@@ -117,9 +119,13 @@ class ResnetBlock(nn.Layer):
         h = nonlinearity(h)
         h = self.conv1(h)
 
-        h = h + self.temb_proj(nonlinearity(temb)).unsqueeze(-1).unsqueeze(-1)
-
-        h = self.norm2(h)
+        emb = self.temb_proj(nonlinearity(temb)).unsqueeze(-1).unsqueeze(-1)
+        if self.use_scale_shift_norm:
+            shift, scale = emb.split(2, 1)
+            h = self.norm2(h) * (1 + scale) + shift
+        else:
+            h = h + emb
+            h = self.norm2(h)
         h = nonlinearity(h)
         h = self.dropout(h)
         h = self.conv2(h)
@@ -200,6 +206,7 @@ class Model(nn.Layer):
         resolution = config.data.image_size
         resamp_with_conv = config.model.resamp_with_conv
         num_timesteps = config.diffusion.num_diffusion_timesteps
+        use_scale_shift_norm = config.model.use_scale_shift_norm if 'use_scale_shift_norm' in config.model else False
         
         if config.model.type == 'bayesian':
             self.logvar = self.create_parameter([num_timesteps,], default_initializer=nn.initializer.Constant(0.0))
@@ -240,7 +247,8 @@ class Model(nn.Layer):
                 block.append(ResnetBlock(in_channels=block_in,
                                          out_channels=block_out,
                                          temb_channels=self.temb_ch,
-                                         dropout=dropout))
+                                         dropout=dropout,
+                                         use_scale_shift_norm=use_scale_shift_norm))
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(AttnBlock(block_in))
@@ -257,12 +265,14 @@ class Model(nn.Layer):
         self.mid.block_1 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
-                                       dropout=dropout)
+                                       dropout=dropout,
+                                       use_scale_shift_norm=use_scale_shift_norm)
         self.mid.attn_1 = AttnBlock(block_in)
         self.mid.block_2 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
-                                       dropout=dropout)
+                                       dropout=dropout,
+                                       use_scale_shift_norm=use_scale_shift_norm)
 
         # upsampling
         self.up = []
@@ -277,7 +287,8 @@ class Model(nn.Layer):
                 block.append(ResnetBlock(in_channels=block_in+skip_in,
                                          out_channels=block_out,
                                          temb_channels=self.temb_ch,
-                                         dropout=dropout))
+                                         dropout=dropout,
+                                         use_scale_shift_norm=use_scale_shift_norm))
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(AttnBlock(block_in))
