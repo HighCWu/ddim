@@ -23,6 +23,36 @@ def get_timestep_embedding(timesteps, embedding_dim):
     return emb
 
 
+def spatial_fold(input, fold):
+    if fold == 1:
+        return input
+
+    batch, channel, height, width = input.shape
+    h_fold = height // fold
+    w_fold = width // fold
+
+    return (
+        input.reshape((batch, channel, h_fold, fold, w_fold, fold))
+        .transpose((0, 1, 3, 5, 2, 4))
+        .reshape((batch, -1, h_fold, w_fold))
+    )
+
+
+def spatial_unfold(input, unfold):
+    if unfold == 1:
+        return input
+
+    batch, channel, height, width = input.shape
+    h_unfold = height * unfold
+    w_unfold = width * unfold
+
+    return (
+        input.reshape((batch, -1, unfold, unfold, height, width))
+        .transpose((0, 1, 4, 2, 5, 3))
+        .reshape((batch, -1, h_unfold, w_unfold))
+    )
+
+
 def nonlinearity(x):
     # swish
     return x*paddle.nn.functional.sigmoid(x)
@@ -207,6 +237,8 @@ class Model(nn.Layer):
         resamp_with_conv = config.model.resamp_with_conv
         num_timesteps = config.diffusion.num_diffusion_timesteps
         use_scale_shift_norm = config.model.use_scale_shift_norm if 'use_scale_shift_norm' in config.model else False
+        fold = config.model.fold if 'fold' in config.model else 1
+        cond_channels = config.model.cond_channels if 'cond_channels' in config.model else 0
         
         if config.model.type == 'bayesian':
             self.logvar = self.create_parameter([num_timesteps,], default_initializer=nn.initializer.Constant(0.0))
@@ -217,6 +249,8 @@ class Model(nn.Layer):
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
         self.in_channels = in_channels
+        self.cond_channels = cond_channels
+        self.fold = fold
 
         # timestep embedding
         self.temb = nn.Layer()
@@ -228,7 +262,7 @@ class Model(nn.Layer):
         ])
 
         # downsampling
-        self.conv_in = paddle.nn.Conv2D(in_channels,
+        self.conv_in = paddle.nn.Conv2D((in_channels + cond_channels)*fold**2,
                                        self.ch,
                                        kernel_size=3,
                                        stride=1,
@@ -304,7 +338,7 @@ class Model(nn.Layer):
         # end
         self.norm_out = Normalize(block_in)
         self.conv_out = paddle.nn.Conv2D(block_in,
-                                        out_ch,
+                                        out_ch*fold**2,
                                         kernel_size=3,
                                         stride=1,
                                         padding=1)
@@ -319,6 +353,7 @@ class Model(nn.Layer):
         temb = self.temb.dense[1](temb)
 
         # downsampling
+        x = spatial_fold(x, self.fold)
         hs = [self.conv_in(x)]
         for i_level in range(self.num_resolutions):
             for i_block in range(self.num_res_blocks):
@@ -349,4 +384,5 @@ class Model(nn.Layer):
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h)
+        h = spatial_unfold(h, self.fold)
         return h
