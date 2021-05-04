@@ -133,14 +133,14 @@ class Diffusion(object):
         start_epoch, step = 0, 0
         if self.args.resume_training:
             states = paddle.load(os.path.join(self.args.log_path, "ckpt.pdl"))
-            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_"})
+            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_" in k})
 
-            optimizer.set_state_dict({k.split("$optimizer_")[-1]: v for k, v in states.items() if "$optimizer_"})
+            optimizer.set_state_dict({k.split("$optimizer_")[-1]: v for k, v in states.items() if "$optimizer_" in k})
             optimizer._epsilon = self.config.optim.eps
             start_epoch = states["$epoch"]
             step = states["$step"]
             if self.config.model.ema:
-                ema_helper.set_state_dict({k.split("$ema_")[-1]: v for k, v in states.items() if "$ema_"})
+                ema_helper.set_state_dict({k.split("$ema_")[-1]: v for k, v in states.items() if "$ema_" in k})
 
         for epoch in range(start_epoch, self.config.training.n_epochs):
             data_start = time.time()
@@ -209,12 +209,12 @@ class Diffusion(object):
                 )
             model = model
             model = paddle.DataParallel(model)
-            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_"})
+            model.set_state_dict({k.split("$model_")[-1]: v for k, v in states.items() if "$model_" in k})
 
             if self.config.model.ema:
                 ema_helper = EMAHelper(mu=self.config.model.ema_rate)
                 ema_helper.register(model)
-                ema_helper.set_state_dict({k.split("$ema_")[-1]: v for k, v in states.items() if "$ema_"})
+                ema_helper.set_state_dict({k.split("$ema_")[-1]: v for k, v in states.items() if "$ema_" in k})
                 ema_helper.ema(model)
             else:
                 ema_helper = None
