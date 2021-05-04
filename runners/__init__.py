@@ -5,33 +5,30 @@ import paddle
 
 
 if 'cumprod' not in paddle.__dict__:
+    import numpy as np
+    from functools import lru_cache
+
+    @lru_cache()
+    def cumprod_mask(axis_length):
+        mask = np.ones([axis_length, axis_length]).astype('float32')
+        mask = np.tril(mask, k=0)
+
+        return paddle.to_tensor(mask)
+
     def cumprod(x, axis=None):
         if axis is None:
             x = x.reshape([-1])
             axis = 0
         assert isinstance(axis, int)
 
+        if axis < 0:
+            axis = len(x.shape) + axis
         axis_length = x.shape[axis]
+        mask = cumprod_mask(axis_length).reshape([*list([1]*axis), -1, axis_length, *list([1]*(len(x.shape)-axis-1))])
+        x = x.unsqueeze(axis)
+        x = x * mask.detach() + (paddle.ones_like(mask) * (1 - mask)).detach()
 
-        slices = []
-        for i in range(len(x.shape)):
-            if i == axis or i == len(x.shape) + axis:
-                slc = [slice(0, j) for j in range(1, axis_length+1)]
-            else:
-                slc = [slice(0, x.shape[i]) for _ in range(1, axis_length+1)]
-            slices.append(slc)
-
-        def get_slc(index):
-            return [slices[i][index] for i in range(len(x.shape))]
-
-        y = paddle.stack([
-            paddle.prod(x[tuple(get_slc(i))], axis=axis)
-            for i in range(axis_length)
-        ], axis)
-        if len(x.shape) == 1:
-            y = y[:,0]
-        
-        return y
+        return paddle.prod(x, axis=axis+1)
 
     paddle.cumprod = cumprod
     paddle.Tensor.cumprod = lambda self, axis=None: cumprod(self, axis)
